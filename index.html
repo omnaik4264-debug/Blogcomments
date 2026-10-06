@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blog Platform with Comments</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #f4f7f6; color: #333; line-height: 1.6; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; background: #0056b3; color: white; padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; }
+        h1 { font-size: 1.5rem; }
+        .auth-status span { margin-right: 10px; font-weight: bold; }
+        .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; }
+        input, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+        textarea { resize: vertical; min-height: 80px; }
+        button { background-color: #0056b3; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-size: 0.9rem; margin-top: 5px; }
+        button:hover { background-color: #003d80; }
+        button.btn-danger { background-color: #d9534f; }
+        button.btn-danger:hover { background-color: #c9302c; }
+        button.btn-secondary { background-color: #6c757d; }
+        button.btn-secondary:hover { background-color: #5a6268; }
+        .post-header { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 10px; }
+        .post-meta { font-size: 0.85rem; color: #666; }
+        .post-actions { margin-top: 10px; }
+        .comments-section { margin-top: 15px; background: #f9f9f9; padding: 10px; border-radius: 6px; }
+        .comment { border-bottom: 1px solid #ddd; padding: 6px 0; font-size: 0.9rem; }
+        .comment:last-child { border-bottom: none; }
+        .comment-author { font-weight: bold; color: #0056b3; }
+        .hidden { display: none !important; }
+        .tab-btn { background: none; border: 1px solid white; color: white; margin-left: 5px; }
+        .tab-btn.active { background: white; color: #0056b3; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Blog Platform</h1>
+        <div id="authHeader">
+            <div id="loggedOutNav">
+                <button class="tab-btn active" onclick="showAuthTab('login')">Login</button>
+                <button class="tab-btn" onclick="showAuthTab('register')">Register</button>
+            </div>
+            <div id="loggedInNav" class="hidden">
+                <span id="welcomeUser"></span>
+                <button class="tab-btn" onclick="logout()">Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Auth Forms -->
+    <div id="authContainer" class="card">
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <h2>Login</h2>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="loginUser" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="loginPass" required>
+            </div>
+            <button type="submit">Log In</button>
+        </form>
+
+        <form id="registerForm" class="hidden" onsubmit="handleRegister(event)">
+            <h2>Register</h2>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="regUser" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="regPass" required>
+            </div>
+            <button type="submit">Register</button>
+        </form>
+    </div>
+
+    <!-- Create / Edit Post Form -->
+    <div id="postFormContainer" class="card hidden">
+        <h2 id="formTitle">Create New Post</h2>
+        <form id="postForm" onsubmit="handleSavePost(event)">
+            <input type="hidden" id="postId">
+            <div class="form-group">
+                <label>Title</label>
+                <input type="text" id="postTitle" required>
+            </div>
+            <div class="form-group">
+                <label>Content</label>
+                <textarea id="postContent" required></textarea>
+            </div>
+            <button type="submit">Publish Post</button>
+            <button type="button" class="btn-secondary hidden" id="cancelEditBtn" onclick="resetPostForm()">Cancel</button>
+        </form>
+    </div>
+
+    <!-- Blog Posts Feed -->
+    <div id="postsFeed"></div>
+</div>
+
+<script>
+    // Data Management via LocalStorage
+    const DB = {
+        getUsers: () => JSON.parse(localStorage.getItem('bp_users')) || [],
+        setUsers: (users) => localStorage.setItem('bp_users', JSON.stringify(users)),
+        getPosts: () => JSON.parse(localStorage.getItem('bp_posts')) || [],
+        setPosts: (posts) => localStorage.setItem('bp_posts', JSON.stringify(posts)),
+        getCurrentUser: () => JSON.parse(localStorage.getItem('bp_session')) || null,
+        setCurrentUser: (user) => localStorage.setItem('bp_session', JSON.stringify(user))
+    };
+
+    // State Initialization
+    let currentUser = DB.getCurrentUser();
+
+    function initApp() {
+        updateAuthUI();
+        renderPosts();
+    }
+
+    // Authentication Handlers
+    function showAuthTab(tab) {
+        document.querySelectorAll('#loggedOutNav .tab-btn').forEach(btn => btn.classList.remove('active'));
+        if (tab === 'login') {
+            document.getElementById('loginForm').classList.remove('hidden');
+            document.getElementById('registerForm').classList.add('hidden');
+            event.target.classList.add('active');
+        } else {
+            document.getElementById('loginForm').classList.add('hidden');
+            document.getElementById('registerForm').classList.remove('hidden');
+            event.target.classList.add('active');
+        }
+    }
+
+    function handleRegister(e) {
+        e.preventDefault();
+        const username = document.getElementById('regUser').value.trim();
+        const password = document.getElementById('regPass').value;
+        const users = DB.getUsers();
+
+        if (users.some(u => u.username === username)) {
+            alert('Username already exists!');
+            return;
+        }
+
+        users.push({ username, password });
+        DB.setUsers(users);
+        alert('Registration successful! Please login.');
+        showAuthTab('login');
+        document.getElementById('registerForm').reset();
+    }
+
+    function handleLogin(e) {
+        e.preventDefault();
+        const username = document.getElementById('loginUser').value.trim();
+        const password = document.getElementById('loginPass').value;
+        const users = DB.getUsers();
+
+        const user = users.find(u => u.username === username && u.password === password);
+        if (!user) {
+            alert('Invalid credentials!');
+            return;
+        }
+
+        currentUser = { username: user.username };
+        DB.setCurrentUser(currentUser);
+        document.getElementById('loginForm').reset();
+        updateAuthUI();
+        renderPosts();
+    }
+
+    function logout() {
+        currentUser = null;
+        localStorage.removeItem('bp_session');
+        updateAuthUI();
+        renderPosts();
+    }
+
+    function updateAuthUI() {
+        if (currentUser) {
+            document.getElementById('authContainer').classList.add('hidden');
+            document.getElementById('loggedOutNav').classList.add('hidden');
+            document.getElementById('loggedInNav').classList.remove('hidden');
+            document.getElementById('welcomeUser').textContent = `Hello, ${currentUser.username}`;
+            document.getElementById('postFormContainer').classList.remove('hidden');
+        } else {
+            document.getElementById('authContainer').classList.remove('hidden');
+            document.getElementById('loggedOutNav').classList.remove('hidden');
+            document.getElementById('loggedInNav').classList.add('hidden');
+            document.getElementById('postFormContainer').classList.add('hidden');
+        }
+    }
+
+    // Post CRUD Logic
+    function handleSavePost(e) {
+        e.preventDefault();
+        if (!currentUser) return alert('Must be logged in');
+
+        const id = document.getElementById('postId').value;
+        const title = document.getElementById('postTitle').value.trim();
+        const content = document.getElementById('postContent').value.trim();
+        let posts = DB.getPosts();
+
+        if (id) {
+            // Edit existing post
+            posts = posts.map(p => p.id === id ? { ...p, title, content, updated: new Date().toISOString() } : p);
+        } else {
+            // Create new post
+            const newPost = {
+                id: Date.now().toString(),
+                title,
+                content,
+                author: currentUser.username,
+                created: new Date().toISOString(),
+                comments: []
+            };
+            posts.unshift(newPost);
+        }
+
+        DB.setPosts(posts);
+        resetPostForm();
+        renderPosts();
+    }
+
+    function editPost(id) {
+        const post = DB.getPosts().find(p => p.id === id);
+        if (!post) return;
+
+        document.getElementById('postId').value = post.id;
+        document.getElementById('postTitle').value = post.title;
+        document.getElementById('postContent').value = post.content;
+        document.getElementById('formTitle').textContent = 'Edit Post';
+        document.getElementById('cancelEditBtn').classList.remove('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function deletePost(id) {
+        if (!confirm('Are you sure you want to delete this post?')) return;
+        let posts = DB.getPosts().filter(p => p.id !== id);
+        DB.setPosts(posts);
+        renderPosts();
+    }
+
+    function resetPostForm() {
+        document.getElementById('postId').value = '';
+        document.getElementById('postForm').reset();
+        document.getElementById('formTitle').textContent = 'Create New Post';
+        document.getElementById('cancelEditBtn').classList.add('hidden');
+    }
+
+    // Comment Logic
+    function addComment(e, postId) {
+        e.preventDefault();
+        if (!currentUser) return alert('You must log in to comment.');
+
+        const commentInput = e.target.querySelector('input');
+        const text = commentInput.value.trim();
+        if (!text) return;
+
+        let posts = DB.getPosts();
+        posts = posts.map(p => {
+            if (p.id === postId) {
+                p.comments.push({
+                    id: Date.now().toString(),
+                    author: currentUser.username,
+                    text: text,
+                    created: new Date().toISOString()
+                });
+            }
+            return p;
+        });
+
+        DB.setPosts(posts);
+        renderPosts();
+    }
+
+    // Render Posts Feed
+    function renderPosts() {
+        const postsFeed = document.getElementById('postsFeed');
+        const posts = DB.getPosts();
+
+        if (posts.length === 0) {
+            postsFeed.innerHTML = '<div class="card"><p>No posts yet. Be the first to publish one!</p></div>';
+            return;
+        }
+
+        postsFeed.innerHTML = posts.map(post => {
+            const isOwner = currentUser && currentUser.username === post.author;
+            const formattedDate = new Date(post.created).toLocaleDateString() + ' ' + new Date(post.created).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+            return `
+                <div class="card">
+                    <div class="post-header">
+                        <h2>${escapeHtml(post.title)}</h2>
+                        <div class="post-meta">By <strong>${escapeHtml(post.author)}</strong> on ${formattedDate}</div>
+                    </div>
+                    <p style="white-space: pre-line;">${escapeHtml(post.content)}</p>
+                    
+                    ${isOwner ? `
+                        <div class="post-actions">
+                            <button onclick="editPost('${post.id}')">Edit</button>
+                            <button class="btn-danger" onclick="deletePost('${post.id}')">Delete</button>
+                        </div>
+                    ` : ''}
+
+                    <div class="comments-section">
+                        <h4>Comments (${post.comments.length})</h4>
+                        <div class="comments-list">
+                            ${post.comments.map(c => `
+                                <div class="comment">
+                                    <span class="comment-author">${escapeHtml(c.author)}:</span>${escapeHtml(c.text)}
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        ${currentUser ? `
+                            <form style="margin-top: 10px;" onsubmit="addComment(event, '${post.id}')">
+                                <input type="text" placeholder="Write a comment..." required style="margin-bottom: 5px;">
+                                <button type="submit">Post Comment</button>
+                            </form>
+                        ` : '<p style="font-size:0.85rem; color:#666; margin-top:8px;">Log in to add comments.</p>'}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    initApp();
+</script>
+</body>
+</html>
